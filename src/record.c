@@ -5,15 +5,15 @@ record_t* initialize_record()
 {
     //Allocate record
     record_t* record = NULL;
-    record = malloc(sizeof(record));
+    record = malloc(sizeof(record_t));
     if(!record)
     {
         //Will return NULL because allocation failed
-        return record;
+        return NULL;
     }
 
     //Allocate memory for the entries
-    record->entries = calloc(sizeof(record_append_entry), INIT_ENTRIES);
+    record->entries = calloc(sizeof(record_entry_t), INIT_ENTRIES);
     record->n_entries = 0;
     record->allocated = INIT_ENTRIES;
 
@@ -24,18 +24,16 @@ record_t* initialize_record()
         //Return NULL because entries couldn't be allocated
         return NULL;
     }
-    else
-    {
-        //Everything was allocated successfully
-        return record;
-    }
+    
+    //Everything was allocated successfully
+    return record;
 }
 //Initializes the memory and returns a pointer
 book_t* initialize_book()
 {
     //Allocate book
     book_t* book = NULL;
-    book = malloc(sizeof(book));
+    book = malloc(sizeof(book_t));
     if(!book)
     {
         //Will return NULL because allocation failed
@@ -43,7 +41,7 @@ book_t* initialize_book()
     }
 
     //Allocate memory for the entries
-    book->records = calloc(sizeof(record_t), INIT_ENTRIES);
+    book->records = calloc(sizeof(record_t*), INIT_ENTRIES);
     book->n_entries = 0;
     book->allocated = INIT_ENTRIES;
 
@@ -54,11 +52,8 @@ book_t* initialize_book()
         //Return NULL because records couldn't be allocated
         return NULL;
     }
-    else
-    {
-        //Everything was allocated successfully
-        return book;
-    }
+    //Everything was allocated successfully
+    return book;
 }
 //Appends a new entry to a record and allocates the required memory, return false if failed.
 bool record_append_entry(record_t* record, record_entry_t entry)
@@ -68,7 +63,6 @@ bool record_append_entry(record_t* record, record_entry_t entry)
         //Check if there is enough space allocated
         if(record->allocated > record->n_entries)
         {
-            //Append data
             memcpy(&record->entries[record->n_entries], &entry, sizeof(record_entry_t));
             record->n_entries++;
             return true;
@@ -77,7 +71,7 @@ bool record_append_entry(record_t* record, record_entry_t entry)
         {
             //Allocate another N(INIT_ENTRIES) entries
             record->allocated += INIT_ENTRIES;
-            record->entries = realloc(record->entries, record->allocated);
+            record->entries = realloc(record->entries, record->allocated * sizeof(record_entry_t));
             //Append data
             memcpy(&record->entries[record->n_entries], &entry, sizeof(record_entry_t));
             record->n_entries++;
@@ -98,7 +92,7 @@ bool book_append_entry(book_t* book, record_t* record)
         if(book->allocated > book->n_entries)
         {
             //Append data
-            memcpy(&book->records[book->n_entries], record, sizeof(record_t));
+            book->records[book->n_entries] = record;
             book->n_entries++;
             return true;
         }
@@ -106,9 +100,9 @@ bool book_append_entry(book_t* book, record_t* record)
         {
             //Allocate another N(INIT_ENTRIES) entries
             book->allocated += INIT_ENTRIES;
-            book->records = realloc(book->records, record->allocated);
+            book->records = realloc(book->records, book->allocated * sizeof(record_t));
             //Append data
-            memcpy(&book->records[book->n_entries], record, sizeof(record_entry_t));
+            book->records[book->n_entries] = record;
             record->n_entries++;
             return true;
         }
@@ -125,14 +119,13 @@ void free_book(book_t* book)
     {
         for(int i = 0;i < book->allocated;i++)
         {
-            record_t* record = &book->records[i];
             //Check if pointer is valid
-            if(record)
+            if(book->records[i])
             {
-                free(record->entries);
+                free_record(book->records[i]);
             }
         }
-        free(book->records);
+        free(book);
     }
 }
 
@@ -141,7 +134,22 @@ void free_record(record_t* record)
 {
     if(record)
     {
+        for(int i = 0;i< record->n_entries;i++)
+        {
+            if(record->entries[i].type == entry_string)
+            {
+                if(record->entries[i].data.string)
+                {
+                    free(record->entries[i].data.string);
+                }
+            }
+        }
         free(record->entries);
+        free(record);
+    }
+    else
+    {
+        fprintf(stderr, "Warning: unvalid record pointer at free_record()\n");
     }
 }
 
@@ -154,9 +162,10 @@ tlv_data_t* encode_record_to_tlv(record_t* record)
         return NULL;
     }
     
-    //Allocate head of the linked list
+    //Allocate node of the linked list
     tlv_data_t* head = NULL;
     head = malloc(sizeof(tlv_data_t));
+    head->size = 0;
 
     if(!head)
     {
@@ -213,6 +222,7 @@ tlv_data_t* encode_record_to_tlv(record_t* record)
                 break;
             default:
                 fprintf(stderr, "Error: Unknown entry type %d\n", entries[i].type);
+                print_record(record);
                 return NULL;
                 break;
             }
@@ -223,19 +233,16 @@ tlv_data_t* encode_record_to_tlv(record_t* record)
 //Serialize book to tlv encoding. Returns buffer with tlv data.
 serialized_t serialize_book_to_tlv(book_t* book)
 {
-    tlv_data_t* tlv_data_head = malloc(sizeof(tlv_data_t*));
-    tlv_data_head->next = NULL;
-    tlv_data_head->size = 0;
+    tlv_data_t* tlv_data_head = NULL;
 
     //Get all tlv_data entries
     for(int i = 0;i < book->n_entries;i++)
     {
         //Temporary variable to hold the pointer of the linked list
-        tlv_data_t* list_head = encode_record_to_tlv(&book->records[i]);
-
+        tlv_data_t* list_head = encode_record_to_tlv(book->records[i]);
         if(!list_head)
         {
-            fprintf(stderr, "Error while trying to serialize records\n");
+            fprintf(stderr, "Error: while trying to serialize records\n");
             //Return NULL buffer
             //Struct that contains buffer and its size
             serialized_t serialized;
@@ -244,7 +251,7 @@ serialized_t serialize_book_to_tlv(book_t* book)
             return serialized;
         }
         //Set tlv_data_head to the head of the first appended list
-        if(tlv_data_head->size == 0)
+        if(tlv_data_head == NULL)
         {
             tlv_data_head = list_head;
         }
@@ -285,10 +292,14 @@ tlv_data_t tlv_encode(uint8_t tag, uint8_t len, char* data, int key)
 {
     tlv_data_t tlv_data;
 
-    //Data lenght + tag + key and len fields
-    uint8_t total_len = len + 3;
     //Allocate buffer for it
-    char* buffer = malloc(total_len * sizeof(char*));
+    
+    //This is so we dont allocate too much data that is not needed
+    char* buffer;
+    if((len+3) < 63)
+        buffer = malloc(63);
+    else
+        buffer = malloc(255);
     tlv_data.data = buffer;
 
     //Copy tag and lenght fields into buffer
@@ -383,22 +394,40 @@ size_t tlv_data_get_size(tlv_data_t* head)
     return size;
 }
 
-// void print_tlv_data_list(tlv_data_t* head)
-// {
-//     printf("Head address 0x%08x\n", (unsigned int)head);
+void print_tlv_data_list(tlv_data_t* head)
+{
+    printf("Head address %p\n", (void*)head);
 
-//     //Iterate through linked list and print elements
-//     tlv_data_t* temp = head;
+    //Iterate through linked list and print elements
+    tlv_data_t* temp = head;
 
-//     while(temp)
-//     {
-//         printf("Node size 0x%08x\n", temp->size);
-//         printf("Node data: ");
-//         for(int i = 0;i < temp->size;i++)
-//         {
-//             printf("%02x ", temp->data[i] & 0xff);
-//         }
-//         temp = temp->next;
-//         printf("\n\n\n\n");
-//     }
-// }
+    while(temp)
+    {
+        printf("Node size 0x%08x\n", temp->size);
+        printf("Node data: ");
+        for(int i = 0;i < temp->size;i++)
+        {
+            printf("%02x ", temp->data[i] & 0xff);
+        }
+        temp = temp->next;
+        printf("\n\n\n\n");
+    }
+}
+
+void print_record(record_t* record)
+{
+    for(int i = 0; i < record->n_entries;i++)
+    {
+        record_entry_t entry = record->entries[i];
+        printf("--------------------------------\n");
+        printf("Record entry %08x\n", i);
+        printf("entry.key    %08x\n", entry.key);
+        printf("entry.type   %08x\n", entry.type);
+        printf("entry.data.boolean %d\n", entry.data.boolean);
+        //if(entry.type == 0)
+        //    printf("entry.data.string %s\n", entry.data.string);
+        //else
+        //    printf("entry.data.string (NULL)\n");
+        printf("entry.data.value %d\n", entry.data.value);
+    }
+}

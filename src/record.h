@@ -64,7 +64,7 @@ typedef struct
 {
     size_t allocated; //Allocated memory
     size_t n_entries; //entries used
-    record_t* records;
+    record_t** records;
 } book_t;
 
 //Initializes the memory and returns a pointer
@@ -94,5 +94,9 @@ tlv_data_t* tlv_data_list_append(tlv_data_t* head, tlv_data_t* list);
 void tlv_data_delete(tlv_data_t* head);
 //Returns the size of the linked list
 size_t tlv_data_get_size(tlv_data_t* head);
+//Print tlv linked list
+void print_tlv_data_list(tlv_data_t* head);
+//Print entries on a record
+void print_record(record_t* record);
 
 #endif

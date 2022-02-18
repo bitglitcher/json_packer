@@ -5,7 +5,7 @@ def rand_string(N):
     return ''.join(random.choice(string.ascii_uppercase 
     + string.digits) for _ in range(N))
 
-def gen_json(lines, output_file):
+def gen_json(lines):
     print("Generating {} records...".format(lines))
     file1 = open("input.json", "w") 
     fmt = "\"{}\":\"{}\", \"{}\":{}, \"{}\":{}"
@@ -28,4 +28,4 @@ def gen_json(lines, output_file):
         file1.write(record)
     file1.close()
 
-gen_json(20, "")
+gen_json(1040)

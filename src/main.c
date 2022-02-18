@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include "record.h"
 #include "json.h"
+#include <time.h>
 
 // This assumes line will have a maximum lenght of 256
 #define LINE_SIZE 256
@@ -36,6 +37,12 @@ bool process_values(json_value *value, int line, book_t *book)
         {
             record_t *record = NULL;
             record = initialize_record(record);
+            //Check for valid record pointer
+            if(!record)
+            {
+                fprintf(stderr, "Error: Couldn't initialize record\n");
+                return false;
+            }
             // Extract pairs from object
             for (int i = 0; i < value->u.object.length; i++)
             {
@@ -61,7 +68,8 @@ bool process_values(json_value *value, int line, book_t *book)
                         break;
                     case json_string:
                         record_entry.type = entry_string;
-                        record_entry.data.string = json_objs[i].value->u.string.ptr;
+                        //Use strdup because later on the json_objs pointer will be freed and data will be lost
+                        record_entry.data.string = strdup(json_objs[i].value->u.string.ptr);
                         break;
                     default:
                         fprintf(stderr, "Error: Couldn't match type %d. Unsupported.\n", line);
@@ -78,6 +86,7 @@ bool process_values(json_value *value, int line, book_t *book)
                     return false;
                 }
             }
+
             if(!book_append_entry(book, record))
             {
                 fprintf(stderr, "Couldn't append record to book\n");
@@ -100,6 +109,10 @@ bool process_values(json_value *value, int line, book_t *book)
 // Note: Make sure to use streaming instead of reading everything into memory.
 int main(int argc, char **argv)
 {
+    // to store the execution time of code
+    double time_spent = 0.0;
+    clock_t begin = clock();
+ 
     // Get file name
     if (argc != 2)
     {
@@ -130,7 +143,7 @@ int main(int argc, char **argv)
             fseek(input_file, 0, SEEK_SET);
 
             // Allocate space for the line buffer
-            char *fetched_line = malloc(sizeof(char *) * LINE_SIZE);
+            char *fetched_line = malloc(sizeof(char) * LINE_SIZE);
 
             // Objects from the json library
             json_char *json_str;
@@ -139,6 +152,10 @@ int main(int argc, char **argv)
             // Book struct where all data will be stored
             book_t *book;
             book = initialize_book();
+            if(!book)
+            {
+                fprintf(stderr, "Error: Couldn't initialize book\n");
+            }
 
             // Line count
             size_t line_cnt = 0;
@@ -167,6 +184,8 @@ int main(int argc, char **argv)
                         fprintf(stderr, "Error while processing data at line %ld\n", line_cnt);
                     }
                 }
+                //Free allocated json parser
+                json_value_free(value);
             }
             // Process data from book into a tlv encoding
             serialized_t serialized = serialize_book_to_tlv(book);
@@ -177,7 +196,20 @@ int main(int argc, char **argv)
                 return 1;
             }
 
+            //Open output file
             FILE* output_file = fopen("output.bin", "w+");
+            if(!output_file)
+            {
+                fprintf(stderr, "Error: Couldn't open file for output\n");
+                return 1;
+            }
+            printf("TLV records written to output.bin\n");
+
+            //Print the execution time and processed records
+            clock_t end = clock();
+            time_spent += (double)(end - begin) / CLOCKS_PER_SEC;
+            printf("Records: %ld processed in %f seconds\n", line_cnt, time_spent);
+
             fwrite(serialized.buffer, sizeof(char), serialized.size, output_file);
             // Free allocated data
             free(fetched_line);
